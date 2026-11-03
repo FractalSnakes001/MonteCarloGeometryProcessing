@@ -1,4 +1,4 @@
-# Python
+#Classic gitignore i copy pasted
 __pycache__/
 *.py[cod]
 *.so

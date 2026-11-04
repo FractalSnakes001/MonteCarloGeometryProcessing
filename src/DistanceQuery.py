@@ -20,7 +20,7 @@ import numpy as np
 #instead of just projecting there is an algo using different cases:
 #next to vertex, edge or face. i did not bother fully understanding it i just copied it.
 
-def closest_point_on_triangle(q: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray):
+def closest_point_on_triangle(q, a, b, c):
     ab = b - a
     ac = c - a
     ap = q - a
@@ -92,7 +92,7 @@ class Primitive:
         self.aabb = aabb            # Bounding box of the triangle
         self.centroid = centroid    
 
-    def closest_point(self, q: np.ndarray) -> np.ndarray:
+    def closest_point(self, q: np.ndarray):
         return closest_point_on_triangle(q, self.v0, self.v1, self.v2)
 
 #node of our tree

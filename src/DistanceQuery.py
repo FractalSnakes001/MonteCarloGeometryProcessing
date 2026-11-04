@@ -8,9 +8,9 @@
 #the centroid of the triangle provides a position reference of the primitive
 #the tree structure will be as follows: a boundind box node will have its two defining points
 #and 2 childs boxex (left and right): if it is an internal node of the tree
-#if it is a leaf it will have a primitive
+#if it is a leaf it will have a primitive list instead of childs. the tree will be built recursively by 
+#splitting the primitives into two groups using the biggest axis distance of the centroids.
 
-#from this information we will build a tree by sorting the boxes into groups using the biggest axis distance to slit recursively
 #then using a stack we will explore the tree to find the closest point on the mesh to a query point q.
 
 import numpy as np

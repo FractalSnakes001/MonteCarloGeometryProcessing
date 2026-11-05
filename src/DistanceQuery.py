@@ -17,9 +17,8 @@ import numpy as np
 
 
 #helper function needed later, having a triangle(2D) what would be it's closest point from a (3D) point
-#instead of just projecting there is an algo using different cases:
+#instead of just projecting, there is an algo using different cases:
 #next to vertex, edge or face. i did not bother fully understanding it i just copied it.
-
 def closest_point_on_triangle(q, a, b, c):
     ab = b - a
     ac = c - a
@@ -134,7 +133,7 @@ class BVH:
         #we search for the extreme points of the triangles for the aabb
         min_pts = np.min(tri_vertices, axis=1)  #(M, 3)
         max_pts = np.max(tri_vertices, axis=1)  #(M, 3)
-        centroids = (v0 + v1 + v2) / 3.0  #(M,1)
+        centroids = (v0 + v1 + v2) / 3.0  #(M,3)
 
 
         #we build the primitives

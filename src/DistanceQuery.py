@@ -21,53 +21,51 @@ import numpy as np
 #next to vertex, edge or face. i did not bother fully understanding it i just copied it.
 
 def closest_point_on_triangle(q, a, b, c):
-    ab = b - a
-    ac = c - a
-    ap = q - a
+    # here q is a query of points (of shape (n, 3)), the output is the query of the projection of each point on the triangle abc
+    ab, ac, bc = b - a, c-a, c-b #edges AB, AC
+    ap, bp, cp = q - a, q-b, q-c #shape (n, 3)
+    d1, d2= ap@ ab, ap@ ac #shape (n, )
+    d3, d4 = bp@ ab, bp@ ac
+    d5, d6 = cp@ ab, cp@ ac
+    vc = d1 * d4 - d3 * d2 #shape (n, )
+    vb = d5 * d2 - d1 * d6
+    va = d3 * d6 - d5 * d4
+
+    denom=va+vb+vc
+    denom=np.where(denom==0, 1.0, denom)
+    v=vb/denom #shape (n, )
+    w=vc/denom 
+    res=a+ v[:, None]*ab+w[:, None]*ac #barycentric coordinates
+
 
     #Check Vertex Region A
-    d1 = np.dot(ab, ap)
-    d2 = np.dot(ac, ap)
-    if d1 <= 0.0 and d2 <= 0.0:
-        return a.copy()
+    mask=(d1<=0.0) & (d2<=0.0)
+    res[mask]=a
 
-    # 2. Check Vertex Region B
-    bp = q - b
-    d3 = np.dot(ab, bp)
-    d4 = np.dot(ac, bp)
-    if d3 >= 0.0 and d4 <= d3:
-        return b.copy()
+    #Check Vertex Region B
+    mask=(d3>=0) & (d4<=d3)
+    res[mask]=b
 
-    # 3. Check Edge Region AB
-    vc = d1 * d4 - d3 * d2
-    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
-        v = d1 / (d1 - d3)
-        return a + v * ab
+    #Check Vertex Region C
+    mask=(d6>=0) & (d5<=d6)
+    res[mask]=c
 
-    # 4. Check Vertex Region C
-    cp = q - c
-    d5 = np.dot(ab, cp)
-    d6 = np.dot(ac, cp)
-    if d6 >= 0.0 and d5 <= d6:
-        return c.copy()
+    #Check Edge Region AB
+    mask=(d1>=0) & (d3<=0.0) & (vc<=0.0)
+    v=d1/np.where(d1-d3==0, 1.0, d1-d3)
+    res[mask]=a+v[mask, None]*ab
 
-    # 5. Check Edge Region AC
-    vb = d5 * d2 - d1 * d6
-    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
-        w = d2 / (d2 - d6)
-        return a + w * ac
+    #Check Edge Region AC
+    mask=(d2>=0) & (d6<=0.0) & (vb<=0.0)
+    w=d2/np.where(d2-d6==0, 1.0, d2-d6)
+    res[mask]=a+w[mask, None]*ac
 
-    # 6. Check Edge Region BC
-    va = d3 * d6 - d5 * d4
-    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
-        w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
-        return b + w * (c - b)
+    #Check Edge Region BC
+    mask=(d5>=d6) & (d3<=d4) & (va<=0.0)
+    w=(d4-d3)/np.where(((d4 - d3) + (d5 - d6))==0, 1.0, ((d4 - d3) + (d5 - d6)))
+    res[mask]=b+w[mask, None]*bc
 
-    # 7. Interior Face Region
-    denom = 1.0 / (va + vb + vc)
-    v = vb * denom
-    w = vc * denom
-    return a + ab * v + ac * w
+    return res
 
 
 
@@ -203,56 +201,62 @@ class BVH:
     #in a good order. this distance must be set to 0 if inside or touching the box
 
     def distance_point_aabb(self, q: np.ndarray, aabb):
-
-        # d_min > 0 only when q is to the left/below the box
-        d_min = np.maximum(0.0, aabb.min_pt - q)
-
-        # d_max > 0 only when q is to the right/above the box
-        d_max = np.maximum(0.0, q - aabb.max_pt)
-    
-        distance = d_min + d_max
-        distance = np.dot(distance, distance)
-        return distance
+        distance=np.maximum(0., np.maximum(aabb.min_pt-q, q-aabb.max_pt))
+        return np.sum(distance**2, axis=-1)
 
 
 
     #closest point query, returns the closest point on the mesh to the query point q, 
     #the distance and the index of the triangle
     def closest_point(self, q: np.ndarray):
-
+    # the function takes a query of points of shape (n, 3) and return a triplet of the closest point, the distance, and the closest triangle identity
         # initialize the variables
-        best_pt = None
-        best_sq_dist = float("inf") #-infinity 
-        best_tri_idx = -1
-        stack = [self.root]
+        q = np.atleast_2d(np.asarray(q, dtype=np.float64))
+        n=len(q)
+        best_pt = np.zeros_like(q)
+        best_sq_dist = np.full(n, np.inf) #-infinity 
+        best_tri_idx = np.ones(n, dtype=np.int64)*(-1)
+        stack = [(self.root, np.arange(n))] #current node and active indices
 
         while stack:
-            node = stack.pop()
+            node, indices = stack.pop()
 
             #we can skip this node and all children if the distance is bigger than best
-            if self.distance_point_aabb(q, node.aabb) >= best_sq_dist: 
+            distance=self.distance_point_aabb(q[indices], node.aabb)
+            indices=indices[distance<best_sq_dist[indices]] #array of better points
+            if len(indices)==0: #if there is nothing 
                 continue
 
             if node.primitives:  # if Leaf node
+                q_temp=q[indices]
                 for p in node.primitives:
-                    pt = p.closest_point(q)
-                    d2 = np.sum((q - pt) ** 2)
-                    if d2 < best_sq_dist:
-                        best_sq_dist = d2
-                        best_pt = pt
-                        best_tri_idx = p.index
+                    pt = p.closest_point(q_temp)
+                    d2 = np.sum((q_temp - pt) ** 2, axis=-1)
+                    new=d2<best_sq_dist[indices]
+                    change=indices[new]
+                    best_sq_dist[change]=d2[new]
+                    best_pt[change]=pt[new]
+                    best_tri_idx[change]=p.index
             else:
-                d_left = self.distance_point_aabb(q, node.left.aabb)
-                d_right = self.distance_point_aabb(q, node.right.aabb)
+                d_left = self.distance_point_aabb(q[indices], node.left.aabb)
+                d_right = self.distance_point_aabb(q[indices], node.right.aabb)
 
 
                 #order is important, we want to explore the closest box first
-                if d_left < d_right:
-                    if d_right < best_sq_dist: stack.append(node.right)
-                    if d_left < best_sq_dist:  stack.append(node.left)
-                else:
-                    if d_left < best_sq_dist:  stack.append(node.left)
-                    if d_right < best_sq_dist: stack.append(node.right)
+                mask=d_left<d_right #indices whose left is better
+                right_id, left_id=d_right<best_sq_dist[indices], d_left<best_sq_dist[indices]
+                test=mask & right_id
+                if test.any():
+                    stack.append((node.right, indices[test]))
+                test=mask & left_id
+                if test.any():
+                    stack.append((node.left, indices[test]))
+                test=~mask& left_id
+                if test.any():
+                    stack.append((node.left, indices[test]))
+                test=~mask & right_id
+                if test.any():
+                    stack.append((node.right, indices[test]))
 
         return best_pt, np.sqrt(best_sq_dist), best_tri_idx
 
@@ -317,19 +321,15 @@ if __name__ == "__main__":
 
     # 4. Evaluate closest point queries
     print(f"Querying {num_query_points} points against BVH...")
-    projected_points = []
     face_hit_counts = np.zeros(len(faces), dtype=np.float64)
 
-    for q in query_points:
-        p_surf, dist, tri_idx = bvh.closest_point(q)
-        projected_points.append(p_surf)
-        face_hit_counts[tri_idx] += 1.0
+    projected_points, dist, tri_idx=bvh.closest_point(query_points)
+    face_hit_counts[tri_idx] = 1.0
 
-    projected_points = np.array(projected_points)
 
     # 5. Visualize in Polyscope
     ps.init()
-    ps.set_up_dir("y_up")
+    ps.set_up_dir("z_up")
 
     # Gargoyle mesh with painted hit regions
     ps_mesh = ps.register_surface_mesh("Gargoyle", vertices, faces)
@@ -338,11 +338,13 @@ if __name__ == "__main__":
     marker_radius = max_span * 0.007
 
     # Line of query points (orange)
-    ps_queries = ps.register_point_cloud("Query Line Points", query_points, radius=marker_radius)
+    ps_queries = ps.register_point_cloud("Query Line Points", query_points)
+    ps_queries.set_radius(marker_radius, relative=False)
     ps_queries.set_color((1.0, 0.5, 0.0))
 
     # Projected surface points (cyan)
-    ps_proj = ps.register_point_cloud("Projected Surface Points", projected_points, radius=marker_radius)
+    ps_proj = ps.register_point_cloud("Projected Surface Points", projected_points)
+    ps_proj.set_radius(marker_radius, relative=False)
     ps_proj.set_color((0.0, 0.8, 1.0))
 
     # Lines connecting the query line to the gargoyle surface (magenta)
@@ -350,7 +352,7 @@ if __name__ == "__main__":
     edges = np.array([[i, i + num_query_points] for i in range(num_query_points)])
     ps_lines = ps.register_curve_network("Projection Rays", edge_nodes, edges)
     ps_lines.set_color((0.9, 0.1, 0.4))
-    ps_lines.set_radius(marker_radius * 0.3)
+    ps_lines.set_radius(marker_radius * 0.3, relative=False)
 
     print("Launching Polyscope viewer...")
     ps.show()

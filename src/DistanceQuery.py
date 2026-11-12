@@ -208,62 +208,11 @@ class BVH:
 
     #closest point query, returns the closest point on the mesh to the query point q, 
     #the distance and the index of the triangle
-    def closest_point(self, q: np.ndarray):
-    # the function takes a query of points of shape (n, 3) and return a triplet of the closest point, the distance, and the closest triangle identity
-        # initialize the variables
-        q = np.atleast_2d(np.asarray(q, dtype=np.float64))
-        n=len(q)
-        best_pt = np.zeros_like(q)
-        best_sq_dist = np.full(n, np.inf) #-infinity 
-        best_tri_idx = np.ones(n, dtype=np.int64)*(-1)
-        stack = [(self.root, np.arange(n))] #current node and active indices
-
-        while stack:
-            node, indices = stack.pop()
-
-            #we can skip this node and all children if the distance is bigger than best
-            distance=self.distance_point_aabb(q[indices], node.aabb)
-            indices=indices[distance<best_sq_dist[indices]] #array of better points
-            if len(indices)==0: #if there is nothing 
-                continue
-
-            if node.primitives:  # if Leaf node
-                q_temp=q[indices]
-                for p in node.primitives:
-                    pt = p.closest_point(q_temp)
-                    d2 = np.sum((q_temp - pt) ** 2, axis=-1)
-                    new=d2<best_sq_dist[indices]
-                    change=indices[new]
-                    best_sq_dist[change]=d2[new]
-                    best_pt[change]=pt[new]
-                    best_tri_idx[change]=p.index
-            else:
-                d_left = self.distance_point_aabb(q[indices], node.left.aabb)
-                d_right = self.distance_point_aabb(q[indices], node.right.aabb)
-
-
-                #order is important, we want to explore the closest box first
-                mask=d_left<d_right #indices whose left is better
-                right_id, left_id=d_right<best_sq_dist[indices], d_left<best_sq_dist[indices]
-                test=mask & right_id
-                if test.any():
-                    stack.append((node.right, indices[test]))
-                test=mask & left_id
-                if test.any():
-                    stack.append((node.left, indices[test]))
-                test=~mask& left_id
-                if test.any():
-                    stack.append((node.left, indices[test]))
-                test=~mask & right_id
-                if test.any():
-                    stack.append((node.right, indices[test]))
-
-        return best_pt, np.sqrt(best_sq_dist), best_tri_idx
+    
 
 
 
-
-#AI made test on standar mesh found on matplotlib or also this repo : https://github.com/NicolasDouillet/3D_test_shapes_repository
+#AI made test on the standard mesh i found on this repo : https://github.com/NicolasDouillet/3D_test_shapes_repository
 
 if __name__ == "__main__":
     import trimesh

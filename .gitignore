@@ -30,6 +30,6 @@ Monte_Carlo
 .DS_Store
 Thumbs.db
 
-#logs
+#logs polyscope things
 imgui.ini
 .polyscope.ini
